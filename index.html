@@ -243,6 +243,7 @@ footer{display:flex;justify-content:space-between;gap:12px;align-items:baseline;
   
   <details id="saving" class="panel">
     <summary>Speichern und wiederherstellen</summary>
+    <p>Nur JSON-Sicherungen dieses Cockpits für dieselbe Sitzung laden.</p>
     <p id="save-status" class="note-status" role="status"></p>
     <div class="controls">
       <button id="new-backup" class="control" type="button" hidden>Automatische Dateisicherung einrichten</button>
@@ -253,6 +254,7 @@ footer{display:flex;justify-content:space-between;gap:12px;align-items:baseline;
     </div>
   </details>
   <section class="panel word-panel" aria-label="Votenexport">
+    <p id="document-policy">Nur öffentlich freigegebene Unterlagen verlinken. Keine internen, vertraulichen oder geheimen Inhalte erfassen. Das gilt auch für Auszüge aus unveröffentlichten Kommissionsprotokollen.</p>
     <div class="controls">
       <label for="word-author">Name für den Word-Export</label>
       <input id="word-author" type="text" autocomplete="name">
@@ -809,7 +811,16 @@ footer{display:flex;justify-content:space-between;gap:12px;align-items:baseline;
 ]</script>
 <script>
 "use strict";
-const items = JSON.parse(document.querySelector("#data").textContent);
+const items = JSON.parse(document.querySelector("#data").textContent).map(item => ({
+  ...item, links: item.links.filter(([,url]) => isPublicSourceUrl(url))
+}));
+function isPublicSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://www.nw.ch" && !url.username && !url.password && !url.search &&
+      /^\/(?:sitzung(?:\/\d+)?|_rte\/information\/\d+|_doc\/\d+|_docn\/\d+\/[^/]+)$/.test(url.pathname);
+  } catch { return false; }
+}
 const search = document.querySelector("#search");
 const count = document.querySelector("#count");
 const list = document.querySelector("#list");
@@ -829,6 +840,7 @@ let pendingWrite = null;
 let writes = Promise.resolve();
 let browserSaved = false;
 let connecting = false;
+const backupFields = new Set(["text","done","held","voteText","voteRole"]);
 try {
   state = validState(JSON.parse(localStorage.getItem(storageKey)) || {});
   browserSaved = true;
@@ -839,6 +851,7 @@ function validState(entries) {
   const clean = {};
   for (const [id, value] of Object.entries(entries)) {
     if (!knownIds.has(id) || !value || typeof value !== "object" || Array.isArray(value) ||
+        Object.keys(value).some(key => !backupFields.has(key)) ||
         (value.text !== undefined && typeof value.text !== "string") ||
         (value.done !== undefined && typeof value.done !== "boolean") ||
         (value.held !== undefined && typeof value.held !== "boolean") ||
@@ -861,8 +874,17 @@ function backupText() {
 }
 function parseBackup(text) {
   const data = JSON.parse(text);
-  if (data?.format !== storageKey) throw Error("Sitzung stimmt nicht überein.");
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      Object.keys(data).length !== 2 || !Object.hasOwn(data,"entries") || data.format !== storageKey) {
+    throw Error("Keine Sicherung dieses Cockpits für diese Sitzung.");
+  }
   return validState(data.entries);
+}
+function checkBackupFile(file) {
+  if (!/\.json$/i.test(file.name) || (file.type && file.type !== "application/json") ||
+      file.size > 8 * 1024 * 1024) {
+    throw Error("Nur JSON-Sicherungen bis 8 MB sind zulässig.");
+  }
 }
 function saveInBrowser() {
   try {
@@ -887,7 +909,9 @@ function writeBackup() {
     const next = pendingWrite;
     pendingWrite = null;
     try {
-      const actual = await (await backup.getFile()).text();
+      const file = await backup.getFile();
+      checkBackupFile(file);
+      const actual = await file.text();
       if (actual !== lastFileText) throw Error("Sicherungsdatei wurde ausserhalb dieses Cockpits geändert.");
       if (actual !== next) {
         const writer = await backup.createWritable();
@@ -932,17 +956,21 @@ async function connectBackup(openExisting) {
     const handle = openExisting
       ? (await window.showOpenFilePicker({types:pickerTypes,multiple:false}))[0]
       : await window.showSaveFilePicker({types:pickerTypes,suggestedName:backupName});
+    await writes;
+    const file = await handle.getFile();
+    checkBackupFile(file);
+    if (!openExisting && file.size !== 0) {
+      statusLine("Die gewählte Datei enthält bereits Daten. Wähle eine neue Datei.");
+      return;
+    }
+    const text = openExisting ? await file.text() : "";
+    if (openExisting) parseBackup(text);
     if (handle.requestPermission && await handle.requestPermission({mode:"readwrite"}) !== "granted") {
       statusLine("Schreibzugriff auf die Sicherungsdatei fehlt. " + browserMessage());
       return;
     }
-    await writes;
-    const text = await (await handle.getFile()).text();
     if (openExisting) {
       if (!restore(text)) return;
-    } else if (text.trim()) {
-      statusLine("Die gewählte Datei enthält bereits Daten. Wähle einen neuen Dateinamen oder verbinde die vorhandene Sicherung.");
-      return;
     }
     lastFileText = text;
     backup = handle;
@@ -966,6 +994,7 @@ backupInput.addEventListener("change", async () => {
   backupInput.value = "";
   if (!file) return;
   try {
+    checkBackupFile(file);
     if (restore(await file.text())) {
       if (backup) writeBackup();
       else statusLine("Sicherung geladen. " + browserMessage());
@@ -973,6 +1002,14 @@ backupInput.addEventListener("change", async () => {
   } catch { statusLine("Ungültige Sicherungsdatei für diese Sitzung. Der bisherige Stand bleibt erhalten."); }
 });
 statusLine(browserMessage());
+function blockDocumentTransfer(event, transfer) {
+  if (!transfer || !(transfer.files.length || Array.from(transfer.types).includes("Files"))) return;
+  event.preventDefault();
+  if (event.type !== "dragover") feedback("Dokumente können nicht geladen werden. Für Sicherungen bitte «Sicherung laden» nutzen.");
+}
+document.addEventListener("dragover",event => blockDocumentTransfer(event,event.dataTransfer));
+document.addEventListener("drop",event => blockDocumentTransfer(event,event.dataTransfer));
+document.addEventListener("paste",event => blockDocumentTransfer(event,event.clipboardData));
 const draftNote = id => state[id] ?? {};
 const normal = text => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replaceAll("ß","ss");
 const wide = () => matchMedia("(min-width:631px)").matches;
@@ -1155,7 +1192,7 @@ function renderVoteEditor(item) {
       "Landrat Nidwalden, 25. November 2026. Traktandum "+item.id+" · "+item.title+".",
       "Verfahrensstand: "+item.stage+".",
       "Sprecherrolle: "+(role.value.trim() || "offen. Bitte klären."),
-      ...item.links.filter(([,url])=>url.startsWith("https://www.nw.ch/")).slice(0,4).map(([label,url])=>label+": "+url),
+      ...item.links.slice(0,4).map(([label,url])=>label+": "+url),
       "Bewahre Position und Antrag des Entwurfs. Erfinde keine Fraktionsposition, Zahlen oder Beschlüsse. Kläre fehlende Angaben und nenne Quellen ausserhalb des Votums.",
       "Aktueller Entwurf:\n"+editor.value
     ].join("\n\n");
