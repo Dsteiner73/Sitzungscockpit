@@ -50,6 +50,15 @@ Das Cockpit selbst funktioniert offline. Für Links zu nw.ch und für die Arbeit
 - **Wenn der Word-Button inaktiv bleibt.** Prüfen, ob mindestens ein Votum als gehalten markiert ist, alle markierten Voten Text enthalten und der Name eingetragen ist.
 - **Gerät oder Browser wechseln.** Vorher unter «Speichern und wiederherstellen» eine Sicherung herunterladen. Im Zielbrowser die HTML-Datei derselben Sitzung öffnen, «Sicherung laden» wählen und den Namen für den Word-Export bei Bedarf neu eingeben.
 
+## Öffentliche Unterlagen und Dateischutz
+
+Das Cockpit ist für öffentlich freigegebene Unterlagen bestimmt. Interne, vertrauliche und geheime Unterlagen, etwa unveröffentlichte Protokolle von Fach- oder Aufsichtskommissionen, bleiben in der dafür vorgesehenen kantonalen Umgebung.
+
+- Das Cockpit nimmt keine Dokumentanhänge an. Es blockiert Dateien beim Ziehen in die Seite und beim Einfügen als Datei.
+- Der Dateidialog akzeptiert ausschliesslich JSON-Sicherungen bis 8 MB. Der Import prüft Sitzung und Datenstruktur. Dateien mit zusätzlichen Dokument- oder Anhangsfeldern werden abgewiesen.
+- In der Traktandenliste werden nur Links zu den vorgesehenen Sitzungs-, Geschäfts- und Dokumentseiten auf `www.nw.ch` angezeigt. Prüfe vor dem Eintragen eines Links, ob die Unterlage öffentlich freigegeben ist. Die Adresse allein belegt die Freigabe nicht.
+- Die technische Sperre erkennt die Klassifizierung von manuell eingegebenem oder eingefügtem Klartext nicht. Übernimm deshalb keine geschützten Protokollauszüge in Notizen, Voten, Sicherungen oder KI-Aufträge.
+
 ## Eingaben sichern
 
 Notizen, Voten und Markierungen speichert das Cockpit lokal im Browser. Je nach Browser, Profil oder privatem Modus kann die Speicherung eingeschränkt sein. Eine JSON-Sicherung enthält die persönlichen Eingaben. Sie gehört in einen geschützten Ordner und wird im Cockpit derselben Sitzung geladen. Der Text- und der Word-Export dienen der Weitergabe.
